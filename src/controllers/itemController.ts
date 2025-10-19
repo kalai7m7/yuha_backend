@@ -1,8 +1,10 @@
-import { Request, Response, NextFunction } from 'express';
+import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { items, Item } from '../models/item';
 import { db } from '../db';
 import { Product, ProductInput } from '../models/products';
 import mysql from 'mysql2/promise';
+import path from 'path';
+import fs from 'fs';
 
 // Create an item
 export const createItem = async (
@@ -176,18 +178,43 @@ export const updateItem = (req: Request, res: Response, next: NextFunction) => {
 };
 
 // Delete an item
-export const deleteItem = (req: Request, res: Response, next: NextFunction) => {
+export const deleteItem: RequestHandler = async (req, res, next) => {
+  const connection = await db.getConnection();
+  await connection.beginTransaction();
+
   try {
-    const id = parseInt(req.params.id, 10);
-    const itemIndex = items.findIndex((i) => i.id === id);
-    if (itemIndex === -1) {
-      res.status(404).json({ message: 'Item not found' });
-      return;
+    const productId = parseInt(req.params.productId, 10);
+    if (isNaN(productId)) {
+      res.status(400).json({ error: "Invalid product ID" });
+      return; // ensure no further execution
     }
-    const deletedItem = items.splice(itemIndex, 1)[0];
-    res.json(deletedItem);
+
+    // Fetch images to delete from disk
+    const [images] = await connection.query(
+      "SELECT image_url FROM product_images WHERE product_id = ?",
+      [productId]
+    );
+
+    // Delete files from /uploads folder
+    (images as any[]).forEach((img) => {
+      const filePath = path.join(__dirname, "../../public", img.image_url);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    });
+
+    // Delete product
+    await connection.query("DELETE FROM products WHERE product_id = ?", [
+      productId,
+    ]);
+
+    await connection.commit();
+    console.log(`PID ${productId} deleted successfully`);
+    res.status(200).json({ message: `Product ${productId} deleted successfully` });
   } catch (error) {
+    await connection.rollback();
+    console.error("Error deleting product:", error);
     next(error);
+  } finally {
+    connection.release();
   }
 };
 
