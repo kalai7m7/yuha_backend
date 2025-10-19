@@ -5,6 +5,7 @@ import { Product, ProductInput } from '../models/products';
 import mysql from 'mysql2/promise';
 import path from 'path';
 import fs from 'fs';
+import logger from '../../logger';
 
 // Create an item
 export const createItem = async (
@@ -48,8 +49,10 @@ export const createItem = async (
 
     // Insert images if any
     console.log('Created PID: ', insertedId);
+    logger.info(`[CREATE] ✅ Product created: ${JSON.stringify(product)}`);
     if (reqWithFiles.files && reqWithFiles.files.length > 0) {
       console.log('Added images for PID: ', insertedId);
+      logger.info(`[CREATE-IMG] ✅ Images added for PID: ${insertedId}, Image count: ${reqWithFiles.files.length}`);
       const images = reqWithFiles.files.map((file, index) => [
         insertedId,
         `/uploads/${file.filename}`,
@@ -70,6 +73,7 @@ export const createItem = async (
       .json({ message: 'Product created', product_id: insertedId, ...product });
   } catch (error) {
     await connection.rollback();
+    logger.error(`❌ [CREATE] Error creating product: ${error instanceof Error ? error.message : error}`);
     next(error);
   } finally {
     connection.release();
@@ -142,36 +146,83 @@ export const getProducts = async (
 };
 
 // Read single item
-export const getItemById = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
+export const getItemById: RequestHandler = async (req, res, next) => {
+  const connection = await db.getConnection();
+  await connection.beginTransaction();
+
   try {
-    const id = parseInt(req.params.id, 10);
-    const item = items.find((i) => i.id === id);
-    if (!item) {
-      res.status(404).json({ message: 'Item not found' });
+    const productId = parseInt(req.params.productId, 10);
+    if (isNaN(productId)) {
+      logger.error(`❌ [READ-ID] Invalid product ID: ${productId}`);
+      res.status(400).json({ error: 'Invalid product ID' });
+      return; // ensure no further execution
+    }
+
+    // Base query
+    let sqlQuery = `
+      SELECT 
+        p.product_id,
+        p.p_name,
+        p.description,
+        p.short_description,
+        p.price,
+        p.offer_price,
+        p.offer_label,
+        f.name AS finish_type,
+        p.delivery_time,
+        p.count,
+        c.name AS category,
+        o.name AS occasion_type,
+        p.created_at
+      FROM products p
+      JOIN categories c ON p.category_id = c.category_id
+      JOIN finish_types f ON p.finish_type_id = f.finish_type_id
+      JOIN occasion_types o ON p.occasion_type_id = o.occasion_type_id
+      WHERE p.product_id = ?
+    `;
+
+    // Fetch product details
+    const [productRows] = await connection.query(sqlQuery, [productId]);
+    if ((productRows as any[]).length === 0) {
+      logger.error(`❌ [READ-ID] Product ${productId} not found.`);
+      res.status(404).json({ error: `Product ${productId} not found.` });
       return;
     }
-    res.json(item);
+    const product = (productRows as any[])[0];
+    const fetchImagesQuery = `
+      SELECT image_url, alt_text
+      FROM product_images
+      WHERE product_id = ?
+      ORDER BY sort_order ASC
+      `;
+    const [imageRows] = await connection.query(fetchImagesQuery, [productId]);
+
+    const images = (imageRows as any[]).map((img) => ({
+      image_url: img.image_url,
+      alt_text: img.alt_text,
+    }));
+
+    res.status(200).json({ ...product, images });
   } catch (error) {
+    console.error("[READ-ID] Error fetching product by ID:", error);
+    logger.error(`❌ [READ-ID] Error fetching product with ID: ${error instanceof Error ? error.message : error}`);
     next(error);
+  } finally {
+    connection.release();
   }
 };
 
 // Update an item
 export const updateItem = (req: Request, res: Response, next: NextFunction) => {
   try {
-    const id = parseInt(req.params.id, 10);
+    const id = parseInt(req.params.productId, 10);
     const { name } = req.body;
     const itemIndex = items.findIndex((i) => i.id === id);
     if (itemIndex === -1) {
-      res.status(404).json({ message: 'Item not found' });
+    logger.error(`❌ Product not found PID: ${id}`);
+    res.status(404).json({ message: 'Item not found' });
       return;
     }
-    items[itemIndex].name = name;
-    res.json(items[itemIndex]);
   } catch (error) {
     next(error);
   }
@@ -185,33 +236,39 @@ export const deleteItem: RequestHandler = async (req, res, next) => {
   try {
     const productId = parseInt(req.params.productId, 10);
     if (isNaN(productId)) {
-      res.status(400).json({ error: "Invalid product ID" });
+      logger.error(`❌ [DELETE] Invalid PID: ${productId}`);
+      res.status(400).json({ error: 'Invalid product ID' });
       return; // ensure no further execution
     }
 
     // Fetch images to delete from disk
     const [images] = await connection.query(
-      "SELECT image_url FROM product_images WHERE product_id = ?",
-      [productId]
+      'SELECT image_url FROM product_images WHERE product_id = ?',
+      [productId],
     );
 
     // Delete files from /uploads folder
     (images as any[]).forEach((img) => {
-      const filePath = path.join(__dirname, "../../public", img.image_url);
+      const filePath = path.join(__dirname, '../../public', img.image_url);
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     });
 
     // Delete product
-    await connection.query("DELETE FROM products WHERE product_id = ?", [
+    await connection.query('DELETE FROM products WHERE product_id = ?', [
       productId,
     ]);
 
     await connection.commit();
     console.log(`PID ${productId} deleted successfully`);
-    res.status(200).json({ message: `Product ${productId} deleted successfully` });
+    logger.info(`PID ${productId} deleted successfully`);
+
+    res
+      .status(200)
+      .json({ message: `Product ${productId} deleted successfully` });
   } catch (error) {
     await connection.rollback();
-    console.error("Error deleting product:", error);
+    console.error('Error deleting product:', error);
+    logger.error(`❌ [DELETE] Error deleting product with ID: ${error instanceof Error ? error.message : error}`);
     next(error);
   } finally {
     connection.release();
@@ -302,9 +359,9 @@ export const getFilteredProducts = async (
         alt_texts: undefined,
       };
     });
-
     res.json(products);
   } catch (err) {
+    logger.error("❌ DB Error: ",err);
     console.error('DB error:', err);
     res.status(500).send('Database error');
   }
