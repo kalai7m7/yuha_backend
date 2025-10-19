@@ -10,7 +10,7 @@ import multer, { StorageEngine } from "multer";
 import path from 'path';
 import fs from 'fs';
 
-const router = Router();
+const itemRouter = Router();
 
 const uploadDir = path.join(__dirname, "../../public/uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
@@ -27,10 +27,9 @@ const storage: StorageEngine = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// router.get('/', getItems);
-router.get('/:productId', getItemById);
-router.post('/', upload.array("images", 5), createItem);
-router.put('/:productId', updateItem);
-router.delete('/:productId', deleteItem);
-router.get('/', getFilteredProducts);
-export default router;
+itemRouter.get('/:productId', getItemById);
+itemRouter.post('/', upload.array("images", 5), createItem);
+itemRouter.put('/:productId', updateItem);
+itemRouter.delete('/:productId', deleteItem);
+itemRouter.get('/', getFilteredProducts);
+export default itemRouter;

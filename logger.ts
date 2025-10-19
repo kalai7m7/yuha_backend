@@ -1,8 +1,9 @@
 import winston from "winston";
 import path from "path";
 import fs from "fs";
+import DailyRotateFile from "winston-daily-rotate-file";
 
-// Ensure logs folder exists
+// Ensure logs directory exists (ZolaHost-safe)
 const logDir = path.join(process.cwd(), "logs");
 if (!fs.existsSync(logDir)) {
   try {
@@ -12,7 +13,7 @@ if (!fs.existsSync(logDir)) {
   }
 }
 
-// Define log format
+// Common log format
 const logFormat = winston.format.combine(
   winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
   winston.format.printf(
@@ -20,24 +21,11 @@ const logFormat = winston.format.combine(
   )
 );
 
-// Create logger
-export const logger = winston.createLogger({
-  level: "info",
-  format: logFormat,
-  transports: [
-    // Save logs to file if filesystem allows
-    new winston.transports.File({
-      filename: path.join(logDir, "error.log"),
-      level: "error",
-    }),
-    new winston.transports.File({
-      filename: path.join(logDir, "combined.log"),
-    }),
-  ],
-});
+// Transports setup (console + daily rotating files)
+const transports: winston.transport[] = [];
 
-// Add console logging (always available)
-logger.add(
+// Console (always works)
+transports.push(
   new winston.transports.Console({
     format: winston.format.combine(
       winston.format.colorize(),
@@ -46,7 +34,41 @@ logger.add(
   })
 );
 
-// Gracefully handle ZolaHost (shared hosting) restrictions
+// Daily rotating file (combined logs)
+try {
+  transports.push(
+    new DailyRotateFile({
+      filename: path.join(logDir, "combined-%DATE%.log"),
+      datePattern: "YYYY-MM-DD",
+      zippedArchive: true,
+      maxSize: "10m",
+      maxFiles: "14d", // keep 14 days
+      level: "info",
+    })
+  );
+
+  transports.push(
+    new DailyRotateFile({
+      filename: path.join(logDir, "error-%DATE%.log"),
+      datePattern: "YYYY-MM-DD",
+      zippedArchive: true,
+      maxSize: "10m",
+      maxFiles: "30d", // keep 30 days of errors
+      level: "error",
+    })
+  );
+} catch (err) {
+  console.error("⚠️ Daily rotation disabled (file system restricted):", err);
+}
+
+// Create logger instance
+export const logger = winston.createLogger({
+  level: "info",
+  format: logFormat,
+  transports,
+});
+
+// Handle unexpected logger errors
 logger.on("error", (err) => {
   console.error("⚠️ Logger transport error:", err.message);
 });
