@@ -13,6 +13,7 @@
   "description": "",
   "devDependencies": {
     "@types/express": "^5.0.3",
+    "@types/multer": "^2.0.0",
     "@types/node": "^24.0.10",
     "dotenv": "^17.0.1",
     "eslint": "^9.30.1",
@@ -25,6 +26,7 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
+    "fs": "^0.0.1-security",
     "multer": "^2.0.2",
     "mysql2": "^3.14.1"
   }

@@ -1,20 +1,35 @@
 import { Router } from 'express';
 import {
   createItem,
-  getItems,
   getItemById,
   updateItem,
   deleteItem,
-  getProducts,
   getFilteredProducts,
 } from '../controllers/itemController';
-import { db } from '../db';
+import multer, { StorageEngine } from "multer";
+import path from 'path';
+import fs from 'fs';
 
 const router = Router();
 
+const uploadDir = path.join(__dirname, "../../public/uploads");
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+// Configure Multer
+const storage: StorageEngine = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = `${Date.now()}-${file.originalname.replace(/\s+/g, "_")}`;
+    cb(null, uniqueName);
+  },
+});
+
+const upload = multer({ storage });
+
 // router.get('/', getItems);
 router.get('/:id', getItemById);
-router.post('/', createItem);
+router.post('/', upload.array("images", 5), createItem);
 router.put('/:id', updateItem);
 router.delete('/:id', deleteItem);
 router.get('/', getFilteredProducts);

@@ -10,36 +10,67 @@ export const createItem = async (
   res: Response,
   next: NextFunction,
 ) => {
-  try {
-    console.log('Create a new item........');
-    const product: ProductInput = req.body;
-    console.log('Product Received to create: ', product);
-    const sql = `
-      INSERT INTO products 
-      (p_name, description, short_description, price, offer_price, offer_label, finish_type_id, delivery_time, count, category_id, occasion_type_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
+  const connection = await db.getConnection();
+  await connection.beginTransaction();
 
-    const [result] = await db.execute<mysql.ResultSetHeader>(sql, [
-      product.p_name,
-      product.description || null,
-      product.short_description || null,
-      product.price,
-      product.offer_price || null,
-      product.offer_label || null,
-      product.finish_type_id || null,
-      product.delivery_time || null,
-      product.count || 0,
-      product.category_id || null,
-      product.occasion_type_id || null,
-    ]);
-    // Get the inserted product_id
+  try {
+    // Cast to include Multer files
+    const reqWithFiles = req as Request & { files?: Express.Multer.File[] };
+
+    // Convert body safely
+    const rawBody: unknown = reqWithFiles.body;
+    const product: ProductInput = rawBody as ProductInput;
+
+    // Insert product
+    const [result] = await connection.execute<mysql.ResultSetHeader>(
+      `INSERT INTO products 
+      (p_name, description, short_description, price, offer_price, offer_label, 
+       finish_type_id, delivery_time, count, category_id, occasion_type_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        product.p_name,
+        product.description || null,
+        product.short_description || null,
+        product.price,
+        product.offer_price || null,
+        product.offer_label || null,
+        product.finish_type_id || null,
+        product.delivery_time || null,
+        product.count || 0,
+        product.category_id || null,
+        product.occasion_type_id || null,
+      ],
+    );
+
     const insertedId = result.insertId;
 
-    // Return 201 with product JSON (including product_id)
-    res.status(201).json({ product_id: insertedId, ...product });
+    // Insert images if any
+    console.log('Created PID: ', insertedId);
+    if (reqWithFiles.files && reqWithFiles.files.length > 0) {
+      console.log('Added images for PID: ', insertedId);
+      const images = reqWithFiles.files.map((file, index) => [
+        insertedId,
+        `/uploads/${file.filename}`,
+        file.originalname,
+        index + 1,
+      ]);
+
+      await connection.query(
+        `INSERT INTO product_images (product_id, image_url, alt_text, sort_order) VALUES ?`,
+        [images],
+      );
+    }
+
+    await connection.commit();
+
+    res
+      .status(201)
+      .json({ message: 'Product created', product_id: insertedId, ...product });
   } catch (error) {
+    await connection.rollback();
     next(error);
+  } finally {
+    connection.release();
   }
 };
 
