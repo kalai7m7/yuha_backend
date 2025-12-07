@@ -3,7 +3,6 @@ import path from "path";
 import fs from "fs";
 import DailyRotateFile from "winston-daily-rotate-file";
 
-// Ensure logs directory exists (ZolaHost-safe)
 const logDir = path.join(process.cwd(), "logs");
 if (!fs.existsSync(logDir)) {
   try {
@@ -13,7 +12,6 @@ if (!fs.existsSync(logDir)) {
   }
 }
 
-// Common log format
 const logFormat = winston.format.combine(
   winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
   winston.format.printf(
@@ -21,20 +19,15 @@ const logFormat = winston.format.combine(
   )
 );
 
-// Transports setup (console + daily rotating files)
-const transports: winston.transport[] = [];
-
-// Console (always works)
-transports.push(
+const transports: winston.transport[] = [
   new winston.transports.Console({
     format: winston.format.combine(
       winston.format.colorize(),
       winston.format.simple()
     ),
-  })
-);
+  }),
+];
 
-// Daily rotating file (combined logs)
 try {
   transports.push(
     new DailyRotateFile({
@@ -42,18 +35,15 @@ try {
       datePattern: "YYYY-MM-DD",
       zippedArchive: true,
       maxSize: "10m",
-      maxFiles: "14d", // keep 14 days
+      maxFiles: "14d",
       level: "info",
-    })
-  );
-
-  transports.push(
+    }),
     new DailyRotateFile({
       filename: path.join(logDir, "error-%DATE%.log"),
       datePattern: "YYYY-MM-DD",
       zippedArchive: true,
       maxSize: "10m",
-      maxFiles: "30d", // keep 30 days of errors
+      maxFiles: "30d",
       level: "error",
     })
   );
@@ -61,16 +51,28 @@ try {
   console.error("⚠️ Daily rotation disabled (file system restricted):", err);
 }
 
-// Create logger instance
 export const logger = winston.createLogger({
   level: "info",
   format: logFormat,
   transports,
 });
 
-// Handle unexpected logger errors
 logger.on("error", (err) => {
   console.error("⚠️ Logger transport error:", err.message);
 });
+
+/**
+ * Helper that returns a logger scoped to a specific traceId.
+ */
+export const getLoggerWithTrace = (traceId: string) => {
+  const formatMessage = (msg: any) => `[traceId=${traceId}] ${msg}`;
+
+  return {
+    info: (msg: any) => logger.info(formatMessage(msg)),
+    error: (msg: any) => logger.error(formatMessage(msg)),
+    warn: (msg: any) => logger.warn(formatMessage(msg)),
+    debug: (msg: any) => logger.debug(formatMessage(msg)),
+  };
+};
 
 export default logger;

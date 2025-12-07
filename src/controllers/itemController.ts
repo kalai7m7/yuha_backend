@@ -5,7 +5,7 @@ import { Product, ProductInput } from '../models/products';
 import mysql from 'mysql2/promise';
 import path from 'path';
 import fs from 'fs';
-import logger from '../../logger';
+import logger, { getLoggerWithTrace } from '../../logger';
 
 // Create an item
 export const createItem = async (
@@ -280,7 +280,8 @@ export const getFilteredProducts = async (
   res: Response,
   next: NextFunction,
 ) => {
-  try {
+  const traceId = (req as any).traceId;
+  const log = getLoggerWithTrace(traceId);try {
     const {
       category,
       finish_type,
@@ -316,9 +317,18 @@ export const getFilteredProducts = async (
 
     const params: any[] = [];
 
+    // Support multiple categories (space, comma, or + separated)
     if (category) {
-      sqlQuery += ` AND c.name = ?`;
-      params.push(category);
+      const categories = (category as string)
+        .split(/[ ,+]/)
+        .map((c) => c.trim())
+        .filter(Boolean);
+
+      if (categories.length > 0) {
+        const placeholders = categories.map(() => "?").join(", ");
+        sqlQuery += ` AND c.name IN (${placeholders})`;
+        params.push(...categories);
+      }
     }
 
     if (finish_type) {
