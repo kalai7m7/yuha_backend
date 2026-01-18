@@ -1,3 +1,5 @@
+/// <reference path="./types/express.d.ts" />
+/// <reference path="./types/multer.d.ts" />
 import app from './app';
 import config from './config/config';
 

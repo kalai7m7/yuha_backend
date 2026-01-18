@@ -29,7 +29,7 @@ const upload = multer({ storage });
 
 itemRouter.get('/:productId', getItemById);
 itemRouter.post('/', upload.array("images", 5), createItem);
-itemRouter.put('/:productId', updateItem);
+itemRouter.put('/:productId',  upload.array("images"), updateItem);
 itemRouter.delete('/:productId', deleteItem);
 itemRouter.get('/', getFilteredProducts);
 export default itemRouter;

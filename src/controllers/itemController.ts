@@ -6,6 +6,7 @@ import mysql from 'mysql2/promise';
 import path from 'path';
 import fs from 'fs';
 import logger, { getLoggerWithTrace } from '../../logger';
+import { toNullableNumber } from '../helper/utils';
 
 // Create an item
 export const createItem = async (
@@ -35,11 +36,11 @@ export const createItem = async (
         product.description || null,
         product.short_description || null,
         product.price,
-        product.offer_price || null,
+        toNullableNumber(product.offer_price),
         product.offer_label || null,
         product.finish_type_id || null,
         product.delivery_time || null,
-        product.count || 0,
+        toNullableNumber(product.count) || 0,
         product.category_id || null,
         product.occasion_type_id || null,
       ],
@@ -213,20 +214,138 @@ export const getItemById: RequestHandler = async (req, res, next) => {
 };
 
 // Update an item
-export const updateItem = (req: Request, res: Response, next: NextFunction) => {
+export const updateItem = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  const connection = await db.getConnection();
+
   try {
-    const id = parseInt(req.params.productId, 10);
-    const { name } = req.body;
-    const itemIndex = items.findIndex((i) => i.id === id);
-    if (itemIndex === -1) {
-    logger.error(`❌ Product not found PID: ${id}`);
-    res.status(404).json({ message: 'Item not found' });
+    await connection.beginTransaction();
+
+    const productId = Number(req.params.productId);
+
+    if (!productId) {
+      res.status(400).json({ message: "Invalid product id" });
       return;
     }
+
+    const {
+      p_name,
+      description,
+      short_description,
+      price,
+      offer_price,
+      offer_label,
+      delivery_time,
+      category_id,
+      finish_type_id,
+      occasion_type_id,
+      count,
+      deleted_image_ids,
+    } = req.body;
+
+    if (!p_name || !price) {
+      res.status(400).json({ message: "Missing required fields" });
+      return;
+    }
+
+    /* ---------------------------------------------------
+       1️⃣ Update product fields
+    --------------------------------------------------- */
+    await connection.execute(
+      `UPDATE products SET
+        p_name = ?,
+        description = ?,
+        short_description = ?,
+        price = ?,
+        offer_price = ?,
+        offer_label = ?,
+        finish_type_id = ?,
+        delivery_time = ?,
+        count = ?,
+        category_id = ?,
+        occasion_type_id = ?
+       WHERE product_id = ?`,
+      [
+        p_name,
+        description ?? null,
+        short_description ?? null,
+        price,
+        toNullableNumber(offer_price),
+        offer_label ?? null,
+        finish_type_id ?? null,
+        delivery_time ?? null,
+        count ?? 0,
+        category_id ?? null,
+        occasion_type_id ?? null,
+        productId,
+      ]
+    );
+
+    /* ---------------------------------------------------
+       2️⃣ Delete selected existing images
+    --------------------------------------------------- */
+    if (deleted_image_ids) {
+      const ids = Array.isArray(deleted_image_ids)
+        ? deleted_image_ids
+        : [deleted_image_ids];
+
+      if (ids.length) {
+        await connection.query(
+          `DELETE FROM product_images WHERE image_id IN (?)`,
+          [ids]
+        );
+      }
+    }
+
+    /* ---------------------------------------------------
+       3️⃣ Insert new images (if uploaded)
+    --------------------------------------------------- */
+    const files = req.files as Express.Multer.File[] | undefined;
+
+    if (files && files.length > 0) {
+      logger.info(`[UPDATE-IMG] Uploading ${files.length} images for PID ${productId}`);
+
+      const values = files.map((file, index) => [
+        productId,
+        `/uploads/${file.filename}`,
+        file.originalname,
+        index + 1,
+      ]);
+
+      await connection.query(
+        `INSERT INTO product_images
+         (product_id, image_url, alt_text, sort_order)
+         VALUES ?`,
+        [values]
+      );
+    }
+
+    /* ---------------------------------------------------
+       4️⃣ Commit
+    --------------------------------------------------- */
+    await connection.commit();
+
+    res.status(200).json({
+      success: true,
+      message: "Product updated successfully",
+    });
   } catch (error) {
+    await connection.rollback();
+
+    logger.error(
+      `❌ [UPDATE] Error updating product ${req.params.productId}`,
+      error
+    );
+
     next(error);
+  } finally {
+    connection.release();
   }
 };
+
 
 // Delete an item
 export const deleteItem: RequestHandler = async (req, res, next) => {
