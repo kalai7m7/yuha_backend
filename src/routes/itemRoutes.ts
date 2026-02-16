@@ -13,7 +13,7 @@ import fs from 'fs';
 const itemRouter = Router();
 
 const uploadDir = path.join(__dirname, "../../public/uploads");
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 // Configure Multer
 const storage: StorageEngine = multer.diskStorage({
   destination: (req, file, cb) => {

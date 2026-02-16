@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { db } from '../db';
-import logger from '../../logger';
+import logger from '../logger';
 
 export const getCategory = async (
   req: Request,

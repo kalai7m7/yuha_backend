@@ -5,7 +5,7 @@ import { Product, ProductInput } from '../models/products';
 import mysql from 'mysql2/promise';
 import path from 'path';
 import fs from 'fs';
-import logger, { getLoggerWithTrace } from '../../logger';
+import logger, { getLoggerWithTrace } from '../logger';
 import { toNullableNumber } from '../helper/utils';
 
 // Create an item
