@@ -1,23 +1,27 @@
-/// <reference path="./types/express.d.ts" />
-/// <reference path="./types/multer.d.ts" />
+import 'dotenv/config';
 
-// Must use require() so dotenv runs BEFORE any other module is loaded.
-// import statements are hoisted/compiled to require() calls at the top,
-// meaning all imports resolve before any inline code runs — dotenv would
-// be too late if written as `import dotenv … dotenv.config()`.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-require('dotenv').config();
+import { app } from './app';
+import { env } from './config/env';
+import { logger } from './lib/logger';
 
-import app from './app';
-import config from './config/config';
-
-// Catch unhandled promise rejections so the process logs the error
-// instead of silently exiting with a "clean exit".
-process.on('unhandledRejection', (reason) => {
-  console.error('❌ Unhandled rejection:', reason);
-  process.exit(1);
+const server = app.listen(env.PORT, () => {
+  logger.info(
+    {
+      port: env.PORT,
+      environment: env.NODE_ENV
+    },
+    'Yuha backend started'
+  );
 });
 
-app.listen(config.port, () => {
-  console.log(`Server running on port ${config.port}`);
-});
+const shutdown = (signal: string) => {
+  logger.info({ signal }, 'Shutdown requested');
+
+  server.close(() => {
+    logger.info('HTTP server closed');
+    process.exit(0);
+  });
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

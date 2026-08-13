@@ -1,9 +1,10 @@
-import { AdminPayload } from "./auth";
+import type { User } from '@supabase/supabase-js';
 
 declare global {
   namespace Express {
     interface Request {
-      user?: AdminPayload;
+      user?: User;
+      userRole?: string;
     }
   }
 }
