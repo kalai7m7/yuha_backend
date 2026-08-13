@@ -5,6 +5,7 @@ import { env } from './config/env';
 import { requestLogger } from './lib/requestLogger';
 import { apiRouter } from './routes';
 import { errorHandler, notFound } from './middleware/error.middleware';
+import { supabaseAdmin } from './lib/supabase/admin';
 
 export const app = express();
 
@@ -30,6 +31,20 @@ app.get('/api/health', (_req, res) => {
       service: 'yuha-backend'
     }
   });
+});
+
+// Temporary connection probe — remove once DB is confirmed working
+app.get('/api/debug/supabase', async (_req, res) => {
+  const { data, error } = await supabaseAdmin
+    .from('products')
+    .select('id')
+    .limit(1);
+
+  if (error) {
+    res.status(500).json({ success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } });
+    return;
+  }
+  res.json({ success: true, data });
 });
 
 app.use('/api', apiRouter);

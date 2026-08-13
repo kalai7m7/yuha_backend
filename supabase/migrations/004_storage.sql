@@ -1,6 +1,0 @@
--- Create this bucket through the Supabase Dashboard or Storage API.
--- Bucket name: products
--- For catalogue images, make the bucket public.
---
--- Application uploads should still happen through the Express backend
--- using SUPABASE_SECRET_KEY.

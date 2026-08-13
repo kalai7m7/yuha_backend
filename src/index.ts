@@ -8,9 +8,29 @@ const server = app.listen(env.PORT, () => {
   logger.info(
     {
       port: env.PORT,
-      environment: env.NODE_ENV
+      environment: env.NODE_ENV,
     },
     'Yuha backend started'
+  );
+});
+
+server.on('error', (error) => {
+  logger.error(
+    {
+      error,
+    },
+    'HTTP server error'
+  );
+});
+
+server.on('listening', () => {
+  const address = server.address();
+
+  logger.info(
+    {
+      address,
+    },
+    'HTTP server is listening'
   );
 });
 
