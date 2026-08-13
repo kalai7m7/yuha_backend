@@ -1,36 +1,31 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
-import { items, Item } from '../models/item';
 import { db } from '../db';
 import { Product, ProductInput } from '../models/products';
-import mysql from 'mysql2/promise';
-import path from 'path';
-import fs from 'fs';
+import format from 'pg-format';
 import logger, { getLoggerWithTrace } from '../logger';
 import { toNullableNumber } from '../helper/utils';
+import { uploadImageToStorage, deleteImagesFromStorage } from '../storage';
 
-// Create an item
+// ─── Create a product ────────────────────────────────────────────────────────
 export const createItem = async (
   req: Request,
   res: Response,
   next: NextFunction,
 ) => {
-  const connection = await db.getConnection();
-  await connection.beginTransaction();
+  const client = await db.connect();
+  await client.query('BEGIN');
 
   try {
-    // Cast to include Multer files
     const reqWithFiles = req as Request & { files?: Express.Multer.File[] };
+    const product: ProductInput = reqWithFiles.body as ProductInput;
 
-    // Convert body safely
-    const rawBody: unknown = reqWithFiles.body;
-    const product: ProductInput = rawBody as ProductInput;
-
-    // Insert product
-    const [result] = await connection.execute<mysql.ResultSetHeader>(
-      `INSERT INTO products 
-      (p_name, description, short_description, price, offer_price, offer_label, 
-       finish_type_id, delivery_time, count, category_id, occasion_type_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    // 1️⃣ Insert product — RETURNING gives us the new PK
+    const insertResult = await client.query<{ product_id: number }>(
+      `INSERT INTO products
+        (p_name, description, short_description, price, offer_price, offer_label,
+         finish_type_id, delivery_time, count, category_id, occasion_type_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       RETURNING product_id`,
       [
         product.p_name,
         product.description || null,
@@ -40,194 +35,120 @@ export const createItem = async (
         product.offer_label || null,
         product.finish_type_id || null,
         product.delivery_time || null,
-        toNullableNumber(product.count) || 0,
+        toNullableNumber(product.count) ?? 0,
         product.category_id || null,
         product.occasion_type_id || null,
       ],
     );
 
-    const insertedId = result.insertId;
+    const insertedId = insertResult.rows[0].product_id;
+    logger.info(`[CREATE] ✅ Product created: PID=${insertedId}`);
 
-    // Insert images if any
-    console.log('Created PID: ', insertedId);
-    logger.info(`[CREATE] ✅ Product created: ${JSON.stringify(product)}`);
+    // 2️⃣ Upload images to Supabase Storage and insert rows
     if (reqWithFiles.files && reqWithFiles.files.length > 0) {
-      console.log('Added images for PID: ', insertedId);
-      logger.info(`[CREATE-IMG] ✅ Images added for PID: ${insertedId}, Image count: ${reqWithFiles.files.length}`);
-      const images = reqWithFiles.files.map((file, index) => [
-        insertedId,
-        `/uploads/${file.filename}`,
-        file.originalname,
-        index + 1,
-      ]);
+      logger.info(`[CREATE-IMG] Uploading ${reqWithFiles.files.length} images for PID ${insertedId}`);
 
-      await connection.query(
-        `INSERT INTO product_images (product_id, image_url, alt_text, sort_order) VALUES ?`,
-        [images],
+      const imageRows: [number, string, string, number][] = [];
+      for (const [index, file] of reqWithFiles.files.entries()) {
+        const publicUrl = await uploadImageToStorage(file, insertedId, index);
+        imageRows.push([insertedId, publicUrl, file.originalname, index + 1]);
+      }
+
+      await client.query(
+        format(
+          'INSERT INTO product_images (product_id, image_url, alt_text, sort_order) VALUES %L',
+          imageRows,
+        ),
       );
     }
 
-    await connection.commit();
+    await client.query('COMMIT');
 
-    res
-      .status(201)
-      .json({ message: 'Product created', product_id: insertedId, ...product });
+    res.status(201).json({ message: 'Product created', product_id: insertedId, ...product });
   } catch (error) {
-    await connection.rollback();
+    await client.query('ROLLBACK');
     logger.error(`❌ [CREATE] Error creating product: ${error instanceof Error ? error.message : error}`);
     next(error);
   } finally {
-    connection.release();
+    client.release();
   }
 };
 
-// Read all items
-export const getItems = (req: Request, res: Response, next: NextFunction) => {
-  try {
-    res.json(items);
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const getProducts = async (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
-  try {
-    console.log('inside');
-    const sqlQuery = `SELECT 
-        p.product_id,
-        p.p_name,
-        p.description,
-        p.short_description,
-        p.price,
-        p.offer_price,
-        p.offer_label,
-        f.name AS finish_type,
-        p.delivery_time,
-        p.count,
-        c.name AS category,
-        o.name AS occasion_type,
-        GROUP_CONCAT(pi.image_url) AS image_urls,
-        GROUP_CONCAT(pi.alt_text) AS alt_texts,
-        p.created_at
-      FROM products p
-      JOIN categories c ON p.category_id = c.category_id
-      JOIN finish_types f ON p.finish_type_id = f.finish_type_id
-      JOIN occasion_types o ON p.occasion_type_id = o.occasion_type_id
-      LEFT JOIN product_images pi ON p.product_id = pi.product_id
-      GROUP BY p.product_id
-      ORDER BY p.product_id`;
-    const [rows] = await db.query(sqlQuery);
-    const products: Product[] = (rows as any[]).map((row) => {
-      const imageUrls = row.image_urls ? row.image_urls.split(',') : [];
-      const altTexts = row.alt_texts ? row.alt_texts.split(',') : [];
-
-      const images = imageUrls.map((url: string, i: number) => ({
-        image_url: url,
-        alt_text: altTexts[i] || '',
-      }));
-
-      return {
-        ...row,
-        images,
-        image_urls: undefined, // remove raw comma string
-        alt_texts: undefined, // remove raw comma string
-      };
-    });
-
-    console.log('get all products------>', products[0]);
-    res.json(products);
-  } catch (err) {
-    console.error('DB error:', err);
-    res.status(500).send('Database error');
-  }
-};
-
-// Read single item
+// ─── Get single product by ID ─────────────────────────────────────────────────
 export const getItemById: RequestHandler = async (req, res, next) => {
-  const connection = await db.getConnection();
-  await connection.beginTransaction();
+  const client = await db.connect();
 
   try {
     const productId = parseInt(req.params.productId, 10);
     if (isNaN(productId)) {
-      logger.error(`❌ [READ-ID] Invalid product ID: ${productId}`);
+      logger.error(`❌ [READ-ID] Invalid product ID: ${req.params.productId}`);
       res.status(400).json({ error: 'Invalid product ID' });
-      return; // ensure no further execution
+      return;
     }
 
-    // Base query
-    let sqlQuery = `
-      SELECT 
-        p.product_id,
-        p.p_name,
-        p.description,
-        p.short_description,
-        p.price,
-        p.offer_price,
-        p.offer_label,
-        f.name AS finish_type,
-        p.delivery_time,
-        p.count,
-        c.name AS category,
-        o.name AS occasion_type,
-        p.created_at
-      FROM products p
-      JOIN categories c ON p.category_id = c.category_id
-      JOIN finish_types f ON p.finish_type_id = f.finish_type_id
-      JOIN occasion_types o ON p.occasion_type_id = o.occasion_type_id
-      WHERE p.product_id = ?
-    `;
+    const productResult = await client.query(
+      `SELECT
+         p.product_id,
+         p.p_name,
+         p.description,
+         p.short_description,
+         p.price,
+         p.offer_price,
+         p.offer_label,
+         f.name AS finish_type,
+         p.delivery_time,
+         p.count,
+         c.name AS category,
+         o.name AS occasion_type,
+         p.created_at
+       FROM products p
+       JOIN categories c      ON p.category_id       = c.category_id
+       JOIN finish_types f    ON p.finish_type_id     = f.finish_type_id
+       JOIN occasion_types o  ON p.occasion_type_id   = o.occasion_type_id
+       WHERE p.product_id = $1`,
+      [productId],
+    );
 
-    // Fetch product details
-    const [productRows] = await connection.query(sqlQuery, [productId]);
-    if ((productRows as any[]).length === 0) {
+    if (productResult.rows.length === 0) {
       logger.error(`❌ [READ-ID] Product ${productId} not found.`);
       res.status(404).json({ error: `Product ${productId} not found.` });
       return;
     }
-    const product = (productRows as any[])[0];
-    const fetchImagesQuery = `
-      SELECT image_url, alt_text
-      FROM product_images
-      WHERE product_id = ?
-      ORDER BY sort_order ASC
-      `;
-    const [imageRows] = await connection.query(fetchImagesQuery, [productId]);
 
-    const images = (imageRows as any[]).map((img) => ({
-      image_url: img.image_url,
-      alt_text: img.alt_text,
-    }));
+    const imageResult = await client.query(
+      `SELECT image_url, alt_text
+       FROM product_images
+       WHERE product_id = $1
+       ORDER BY sort_order ASC`,
+      [productId],
+    );
 
-    res.status(200).json({ ...product, images });
+    res.status(200).json({
+      ...productResult.rows[0],
+      images: imageResult.rows,
+    });
   } catch (error) {
-    console.error("[READ-ID] Error fetching product by ID:", error);
-    logger.error(`❌ [READ-ID] Error fetching product with ID: ${error instanceof Error ? error.message : error}`);
+    logger.error(`❌ [READ-ID] Error fetching product: ${error instanceof Error ? error.message : error}`);
     next(error);
   } finally {
-    connection.release();
+    client.release();
   }
 };
 
-// Update an item
+// ─── Update a product ─────────────────────────────────────────────────────────
 export const updateItem = async (
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> => {
-  const connection = await db.getConnection();
+  const client = await db.connect();
 
   try {
-    await connection.beginTransaction();
+    await client.query('BEGIN');
 
     const productId = Number(req.params.productId);
-
     if (!productId) {
-      res.status(400).json({ message: "Invalid product id" });
+      res.status(400).json({ message: 'Invalid product id' });
       return;
     }
 
@@ -247,27 +168,25 @@ export const updateItem = async (
     } = req.body;
 
     if (!p_name || !price) {
-      res.status(400).json({ message: "Missing required fields" });
+      res.status(400).json({ message: 'Missing required fields' });
       return;
     }
 
-    /* ---------------------------------------------------
-       1️⃣ Update product fields
-    --------------------------------------------------- */
-    await connection.execute(
+    // 1️⃣ Update product fields
+    await client.query(
       `UPDATE products SET
-        p_name = ?,
-        description = ?,
-        short_description = ?,
-        price = ?,
-        offer_price = ?,
-        offer_label = ?,
-        finish_type_id = ?,
-        delivery_time = ?,
-        count = ?,
-        category_id = ?,
-        occasion_type_id = ?
-       WHERE product_id = ?`,
+         p_name            = $1,
+         description       = $2,
+         short_description = $3,
+         price             = $4,
+         offer_price       = $5,
+         offer_label       = $6,
+         finish_type_id    = $7,
+         delivery_time     = $8,
+         count             = $9,
+         category_id       = $10,
+         occasion_type_id  = $11
+       WHERE product_id = $12`,
       [
         p_name,
         description ?? null,
@@ -281,136 +200,117 @@ export const updateItem = async (
         category_id ?? null,
         occasion_type_id ?? null,
         productId,
-      ]
+      ],
     );
 
-    /* ---------------------------------------------------
-       2️⃣ Delete selected existing images
-    --------------------------------------------------- */
+    // 2️⃣ Delete selected existing images from DB (Storage cleanup is best-effort)
     if (deleted_image_ids) {
-      const ids = Array.isArray(deleted_image_ids)
-        ? deleted_image_ids
-        : [deleted_image_ids];
+      const ids: number[] = Array.isArray(deleted_image_ids)
+        ? deleted_image_ids.map(Number)
+        : [Number(deleted_image_ids)];
 
       if (ids.length) {
-        await connection.query(
-          `DELETE FROM product_images WHERE image_id IN (?)`,
-          [ids]
+        // Fetch URLs before deleting so we can clean up Storage
+        const urlResult = await client.query(
+          `SELECT image_url FROM product_images WHERE image_id = ANY($1)`,
+          [ids],
         );
+        await client.query(
+          `DELETE FROM product_images WHERE image_id = ANY($1)`,
+          [ids],
+        );
+        // Best-effort Storage cleanup (outside transaction — failure won't rollback)
+        const urls = urlResult.rows.map((r: { image_url: string }) => r.image_url);
+        await deleteImagesFromStorage(urls);
       }
     }
 
-    /* ---------------------------------------------------
-       3️⃣ Insert new images (if uploaded)
-    --------------------------------------------------- */
+    // 3️⃣ Upload and insert new images
     const files = req.files as Express.Multer.File[] | undefined;
-
     if (files && files.length > 0) {
       logger.info(`[UPDATE-IMG] Uploading ${files.length} images for PID ${productId}`);
 
-      const values = files.map((file, index) => [
-        productId,
-        `/uploads/${file.filename}`,
-        file.originalname,
-        index + 1,
-      ]);
+      const imageRows: [number, string, string, number][] = [];
+      for (const [index, file] of files.entries()) {
+        const publicUrl = await uploadImageToStorage(file, productId, index);
+        imageRows.push([productId, publicUrl, file.originalname, index + 1]);
+      }
 
-      await connection.query(
-        `INSERT INTO product_images
-         (product_id, image_url, alt_text, sort_order)
-         VALUES ?`,
-        [values]
+      await client.query(
+        format(
+          'INSERT INTO product_images (product_id, image_url, alt_text, sort_order) VALUES %L',
+          imageRows,
+        ),
       );
     }
 
-    /* ---------------------------------------------------
-       4️⃣ Commit
-    --------------------------------------------------- */
-    await connection.commit();
+    await client.query('COMMIT');
 
-    res.status(200).json({
-      success: true,
-      message: "Product updated successfully",
-    });
+    res.status(200).json({ success: true, message: 'Product updated successfully' });
   } catch (error) {
-    await connection.rollback();
-
-    logger.error(
-      `❌ [UPDATE] Error updating product ${req.params.productId}`,
-      error
-    );
-
+    await client.query('ROLLBACK');
+    logger.error(`❌ [UPDATE] Error updating product ${req.params.productId}: ${error instanceof Error ? error.message : error}`);
     next(error);
   } finally {
-    connection.release();
+    client.release();
   }
 };
 
-
-// Delete an item
+// ─── Delete a product ─────────────────────────────────────────────────────────
 export const deleteItem: RequestHandler = async (req, res, next) => {
-  const connection = await db.getConnection();
-  await connection.beginTransaction();
+  const client = await db.connect();
+  await client.query('BEGIN');
 
   try {
     const productId = parseInt(req.params.productId, 10);
     if (isNaN(productId)) {
-      logger.error(`❌ [DELETE] Invalid PID: ${productId}`);
+      logger.error(`❌ [DELETE] Invalid PID: ${req.params.productId}`);
       res.status(400).json({ error: 'Invalid product ID' });
-      return; // ensure no further execution
+      return;
     }
 
-    // Fetch images to delete from disk
-    const [images] = await connection.query(
-      'SELECT image_url FROM product_images WHERE product_id = ?',
+    // Fetch image URLs before deleting (ON DELETE CASCADE removes them from DB automatically)
+    const imageResult = await client.query(
+      'SELECT image_url FROM product_images WHERE product_id = $1',
       [productId],
     );
 
-    // Delete files from /uploads folder
-    (images as any[]).forEach((img) => {
-      const filePath = path.join(__dirname, '../../public', img.image_url);
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    });
+    // Delete product — product_images rows cascade automatically
+    await client.query('DELETE FROM products WHERE product_id = $1', [productId]);
 
-    // Delete product
-    await connection.query('DELETE FROM products WHERE product_id = ?', [
-      productId,
-    ]);
+    await client.query('COMMIT');
 
-    await connection.commit();
-    console.log(`PID ${productId} deleted successfully`);
+    // Best-effort Storage cleanup after successful DB commit
+    const urls = imageResult.rows.map((r: { image_url: string }) => r.image_url);
+    await deleteImagesFromStorage(urls);
+
     logger.info(`PID ${productId} deleted successfully`);
-
-    res
-      .status(200)
-      .json({ message: `Product ${productId} deleted successfully` });
+    res.status(200).json({ message: `Product ${productId} deleted successfully` });
   } catch (error) {
-    await connection.rollback();
-    console.error('Error deleting product:', error);
-    logger.error(`❌ [DELETE] Error deleting product with ID: ${error instanceof Error ? error.message : error}`);
+    await client.query('ROLLBACK');
+    logger.error(`❌ [DELETE] Error deleting product: ${error instanceof Error ? error.message : error}`);
     next(error);
   } finally {
-    connection.release();
+    client.release();
   }
 };
 
+// ─── Get filtered products ────────────────────────────────────────────────────
 export const getFilteredProducts = async (
   req: Request,
   res: Response,
   next: NextFunction,
 ) => {
   const traceId = (req as any).traceId;
-  const log = getLoggerWithTrace(traceId);try {
-    const {
-      category,
-      finish_type,
-      occasion_type,
-      sort_by, // "price_asc", "price_desc", "latest"
-    } = req.query;
+  const log = getLoggerWithTrace(traceId);
 
-    // Base query
+  try {
+    // Support both "sort_by" and "sort" param names (frontend sends "sort")
+    const { category, finish_type, occasion_type, sort_by, sort, is_available } = req.query;
+    const sortParam = (sort_by || sort) as string | undefined;
+
     let sqlQuery = `
-      SELECT 
+      SELECT
         p.product_id,
         p.p_name,
         p.description,
@@ -423,75 +323,92 @@ export const getFilteredProducts = async (
         p.count,
         c.name AS category,
         o.name AS occasion_type,
-        GROUP_CONCAT(pi.image_url) AS image_urls,
-        GROUP_CONCAT(pi.alt_text) AS alt_texts,
+        STRING_AGG(pi.image_url, ',') AS image_urls,
+        STRING_AGG(pi.alt_text,  ',') AS alt_texts,
         p.created_at
       FROM products p
-      JOIN categories c ON p.category_id = c.category_id
-      JOIN finish_types f ON p.finish_type_id = f.finish_type_id
-      JOIN occasion_types o ON p.occasion_type_id = o.occasion_type_id
-      LEFT JOIN product_images pi ON p.product_id = pi.product_id
+      JOIN categories c      ON p.category_id      = c.category_id
+      JOIN finish_types f    ON p.finish_type_id    = f.finish_type_id
+      JOIN occasion_types o  ON p.occasion_type_id  = o.occasion_type_id
+      LEFT JOIN product_images pi ON p.product_id   = pi.product_id
       WHERE 1 = 1
     `;
 
     const params: any[] = [];
+    let paramIndex = 1;
+
+    // is_available filter — "true" filters to available only, "false" returns all
+    if (is_available === 'true') {
+      sqlQuery += ` AND p.is_available = TRUE`;
+    }
 
     // Support multiple categories (space, comma, or + separated)
     if (category) {
       const categories = (category as string)
         .split(/[ ,+]/)
-        .map((c) => c.trim())
+        .map(c => c.trim())
         .filter(Boolean);
 
       if (categories.length > 0) {
-        const placeholders = categories.map(() => "?").join(", ");
-        sqlQuery += ` AND c.name IN (${placeholders})`;
-        params.push(...categories);
+        sqlQuery += ` AND c.name = ANY($${paramIndex})`;
+        params.push(categories);
+        paramIndex++;
       }
     }
 
     if (finish_type) {
-      sqlQuery += ` AND f.name = ?`;
+      sqlQuery += ` AND f.name = $${paramIndex}`;
       params.push(finish_type);
+      paramIndex++;
     }
 
     if (occasion_type) {
-      sqlQuery += ` AND o.name = ?`;
+      sqlQuery += ` AND o.name = $${paramIndex}`;
       params.push(occasion_type);
+      paramIndex++;
     }
 
-    sqlQuery += ` GROUP BY p.product_id`;
+    sqlQuery += ` GROUP BY p.product_id, c.name, f.name, o.name`;
 
-    // Sorting
-    if (sort_by === 'price_asc') {
+    if (sortParam === 'price_asc') {
       sqlQuery += ` ORDER BY p.price ASC`;
-    } else if (sort_by === 'price_desc') {
+    } else if (sortParam === 'price_desc') {
       sqlQuery += ` ORDER BY p.price DESC`;
     } else {
-      sqlQuery += ` ORDER BY p.created_at DESC`; // default
+      sqlQuery += ` ORDER BY p.created_at DESC`;
     }
 
-    const [rows] = await db.query(sqlQuery, params);
+    const client = await db.connect();
+    let rows: any[];
+    try {
+      const result = await client.query(sqlQuery, params);
+      rows = result.rows;
+    } finally {
+      client.release();
+    }
 
-    const products = (rows as any[]).map((row) => {
-      const imageUrls = row.image_urls?.split(',') || [];
-      const altTexts = row.alt_texts?.split(',') || [];
-      const images = imageUrls.map((url: string, i: number) => ({
+    const products: Product[] = rows.map((row: any) => {
+      const imageUrls: string[] = row.image_urls ? row.image_urls.split(',') : [];
+      const altTexts: string[]  = row.alt_texts  ? row.alt_texts.split(',')  : [];
+      const images = imageUrls.map((url, i) => ({
         image_url: url,
         alt_text: altTexts[i] || '',
       }));
-
-      return {
-        ...row,
-        images,
-        image_urls: undefined,
-        alt_texts: undefined,
-      };
+      return { ...row, images, image_urls: undefined, alt_texts: undefined };
     });
+
     res.json(products);
   } catch (err) {
-    logger.error("❌ DB Error: ",err);
-    console.error('DB error:', err);
-    res.status(500).send('Database error');
+    log.error(`❌ DB Error in getFilteredProducts: ${err instanceof Error ? err.message : err}`);
+    next(err);
+  }
+};
+
+// ─── Legacy in-memory helpers (kept for compatibility) ───────────────────────
+export const getItems = (req: Request, res: Response, next: NextFunction) => {
+  try {
+    res.json([]);
+  } catch (error) {
+    next(error);
   }
 };

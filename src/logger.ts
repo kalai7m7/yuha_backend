@@ -12,7 +12,17 @@ if (!fs.existsSync(logDir)) {
   }
 }
 
-const logFormat = winston.format.combine(
+// File format — plain text with timestamp, no colour codes
+const fileFormat = winston.format.combine(
+  winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
+  winston.format.printf(
+    (info) => `[${info.timestamp}] ${info.level.toUpperCase()}: ${info.message}`
+  )
+);
+
+// Console format — same structure but with colour on the level
+const consoleFormat = winston.format.combine(
+  winston.format.colorize({ all: false, level: true }),
   winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
   winston.format.printf(
     (info) => `[${info.timestamp}] ${info.level.toUpperCase()}: ${info.message}`
@@ -20,12 +30,7 @@ const logFormat = winston.format.combine(
 );
 
 const transports: winston.transport[] = [
-  new winston.transports.Console({
-    format: winston.format.combine(
-      winston.format.colorize(),
-      winston.format.simple()
-    ),
-  }),
+  new winston.transports.Console({ format: consoleFormat }),
 ];
 
 try {
@@ -37,6 +42,7 @@ try {
       maxSize: "10m",
       maxFiles: "14d",
       level: "info",
+      format: fileFormat,
     }),
     new DailyRotateFile({
       filename: path.join(logDir, "error-%DATE%.log"),
@@ -45,6 +51,7 @@ try {
       maxSize: "10m",
       maxFiles: "30d",
       level: "error",
+      format: fileFormat,
     })
   );
 } catch (err) {
@@ -53,7 +60,6 @@ try {
 
 export const logger = winston.createLogger({
   level: "info",
-  format: logFormat,
   transports,
 });
 

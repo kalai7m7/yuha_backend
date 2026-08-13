@@ -1,6 +1,4 @@
-import dotenv from 'dotenv';
-
-dotenv.config();
+// dotenv is loaded once in app.ts — do not call dotenv.config() here again
 
 interface Config {
   port: number;
