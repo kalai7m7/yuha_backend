@@ -34,6 +34,16 @@
       "key": "occasion_type_id",
       "value": "REPLACE-WITH-OCCASION-TYPE-UUID",
       "type": "string"
+    },
+    {
+      "key": "order_id",
+      "value": "REPLACE-WITH-ORDER-UUID",
+      "type": "string"
+    },
+    {
+      "key": "customer_id",
+      "value": "REPLACE-WITH-CUSTOMER-UUID",
+      "type": "string"
     }
   ],
   "item": [
@@ -370,6 +380,29 @@
           }
         },
         {
+          "name": "Upload Product Images",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "images",
+                  "type": "file",
+                  "description": "Select 1 to 10 image files (JPEG, PNG, WEBP, etc.)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/products/{{product_id}}/images",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products", "{{product_id}}", "images"]
+            },
+            "description": "Upload one or more images directly to an existing product. Uploads binaries to the `products` Supabase Storage bucket and creates records in `product_images` table."
+          }
+        },
+        {
           "name": "Delete Product",
           "request": {
             "method": "DELETE",
@@ -380,6 +413,182 @@
               "path": ["api", "products", "{{product_id}}"]
             },
             "description": "Permanently delete a product by UUID. Associated images cascade delete. Returns `{ \"success\": true, \"data\": null }`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Delivery Pincodes",
+      "item": [
+        {
+          "name": "Check Pincode Deliverability",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pincodes/600001",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pincodes", "600001"]
+            },
+            "description": "Check if a 6-digit postal pincode is active for delivery. Returns `{ deliverable: true/false, city, state }`."
+          }
+        },
+        {
+          "name": "List All Pincodes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pincodes",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pincodes"]
+            },
+            "description": "List all deliverable postal pincodes in the database."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "item": [
+        {
+          "name": "Create Order (Checkout)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer\": {\n    \"name\": \"Priya Sharma\",\n    \"email\": \"priya@example.com\",\n    \"phone_number\": \"9876543210\"\n  },\n  \"shipping\": {\n    \"shipping_name\": \"Priya Sharma\",\n    \"shipping_phone\": \"9876543210\",\n    \"shipping_address\": \"Flat 402, Lotus Apartments, Anna Nagar\",\n    \"shipping_city\": \"Chennai\",\n    \"shipping_state\": \"Tamil Nadu\",\n    \"shipping_pincode\": \"600001\"\n  },\n  \"items\": [\n    {\n      \"product_id\": \"{{product_id}}\",\n      \"product_name\": \"Antique Bridal Bangle Set\",\n      \"quantity\": 1,\n      \"unit_price\": 1599,\n      \"total_price\": 1599\n    }\n  ],\n  \"total_amount\": 1599,\n  \"shipping_cost\": 0,\n  \"grand_total\": 1599,\n  \"payment_method\": \"cod\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/orders",
+              "host": ["{{base_url}}"],
+              "path": ["api", "orders"]
+            },
+            "description": "Place a new customer order. Automatically creates/finds customer record, inserts order items, registers payment ledger, and deducts inventory."
+          }
+        },
+        {
+          "name": "List All Orders (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/orders",
+              "host": ["{{base_url}}"],
+              "path": ["api", "orders"]
+            },
+            "description": "Protected admin endpoint to list all customer orders ordered newest first."
+          }
+        },
+        {
+          "name": "Get Order by ID (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{order_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "orders", "{{order_id}}"]
+            },
+            "description": "Fetch a specific order with customer, line items, and payment details."
+          }
+        },
+        {
+          "name": "Update Order Status (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"shipped\",\n  \"tracking_number\": \"DELHIVERY-987654321\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{order_id}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "orders", "{{order_id}}", "status"]
+            },
+            "description": "Update the fulfillment status of an order ('confirmed', 'processing', 'shipped', 'delivered', 'cancelled')."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customers",
+      "item": [
+        {
+          "name": "List All Customers (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/customers",
+              "host": ["{{base_url}}"],
+              "path": ["api", "customers"]
+            },
+            "description": "Protected admin endpoint to list all customers and their order summaries."
+          }
+        },
+        {
+          "name": "Get Customer by ID (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/customers/{{customer_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "customers", "{{customer_id}}"]
+            },
+            "description": "Fetch customer profile by UUID with addresses and complete order history."
           }
         }
       ]
