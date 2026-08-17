@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Yuha Backend API",
-    "description": "REST API for Yuha Exclusives jewellery store backend.\n\nBase URL: http://localhost:3000\n\nAll successful responses: { success: true, data: ... }\nAll error responses:    { success: false, error: { code, message }, requestId }",
+    "description": "REST API collection for Yuha Exclusives jewellery store backend.\n\nBase URL: {{base_url}} (default: http://localhost:3000)\n\nResponse Conventions:\n- Success (2xx): { \"success\": true, \"data\": ... }\n- Error (4xx/5xx): { \"success\": false, \"error\": { \"code\": \"...\", \"message\": \"...\", \"details\": ... }, \"requestId\": \"...\" }\n\nAuth Header (when required): Authorization: Bearer {{access_token}}",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -11,14 +11,34 @@
       "type": "string"
     },
     {
+      "key": "access_token",
+      "value": "REPLACE-WITH-ACCESS-TOKEN",
+      "type": "string"
+    },
+    {
       "key": "product_id",
-      "value": "REPLACE-WITH-REAL-UUID",
+      "value": "REPLACE-WITH-PRODUCT-UUID",
+      "type": "string"
+    },
+    {
+      "key": "category_id",
+      "value": "REPLACE-WITH-CATEGORY-UUID",
+      "type": "string"
+    },
+    {
+      "key": "finish_type_id",
+      "value": "REPLACE-WITH-FINISH-TYPE-UUID",
+      "type": "string"
+    },
+    {
+      "key": "occasion_type_id",
+      "value": "REPLACE-WITH-OCCASION-TYPE-UUID",
       "type": "string"
     }
   ],
   "item": [
     {
-      "name": "Health",
+      "name": "Health & System",
       "item": [
         {
           "name": "Health Check",
@@ -30,11 +50,11 @@
               "host": ["{{base_url}}"],
               "path": ["api", "health"]
             },
-            "description": "Server liveness check. Returns 200 if the Express server is running."
+            "description": "Server liveness check.\n\nReturns HTTP 200 with service status: { \"success\": true, \"data\": { \"status\": \"ok\", \"service\": \"yuha-backend\" } }."
           }
         },
         {
-          "name": "Debug — Supabase Connection",
+          "name": "Debug — Supabase DB Probe",
           "request": {
             "method": "GET",
             "header": [],
@@ -43,16 +63,83 @@
               "host": ["{{base_url}}"],
               "path": ["api", "debug", "supabase"]
             },
-            "description": "⚠️ Temporary probe endpoint. Confirms DB connection is working. Remove before production."
+            "description": "⚠️ Temporary diagnostic endpoint — verifies connectivity to Supabase PostgreSQL database using supabaseAdmin client. Remove before production deployment."
           }
         }
       ]
     },
     {
-      "name": "Catalog",
+      "name": "Auth",
       "item": [
         {
-          "name": "Get All Catalog",
+          "name": "Login (Supabase Auth)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.session && jsonData.data.session.access_token) {",
+                  "        pm.collectionVariables.set('access_token', jsonData.data.session.access_token);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@yuhaexclusives.com\",\n  \"password\": \"your-admin-password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Authenticates user against Supabase Auth (signInWithPassword).\n\nReturns `{ user, session }` including `access_token` and `refresh_token`.\n\nNote: In the current backend, the auth module is implemented in `src/modules/auth/` and ready to be mounted in `src/routes.ts` (`apiRouter.use('/auth', authRouter)`)."
+          }
+        },
+        {
+          "name": "Get Current User Profile (Me)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Protected endpoint. Validates Bearer token via `supabase.auth.getUser(token)` and fetches the extended profile (`id, email, full_name, role, is_active`) from the `profiles` table using `supabaseAdmin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catalog (Lookups)",
+      "item": [
+        {
+          "name": "Get All Catalog (Categories + Finish Types + Occasion Types)",
           "request": {
             "method": "GET",
             "header": [],
@@ -61,7 +148,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "catalog"]
             },
-            "description": "Returns all three lookup tables in one call: categories, finish_types, occasion_types. Use this to populate frontend filter dropdowns."
+            "description": "Fetches all active lookup tables in a single call in parallel via Promise.all.\n\nUsed by frontend to populate filter dropdowns and admin selectors.\n\nReturns `{ categories: [...], finish_types: [...], occasion_types: [...] }`."
           }
         },
         {
@@ -74,7 +161,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "catalog", "categories"]
             },
-            "description": "Returns active categories: Necklaces, Chains, Chainsets, Pendants, Bracelets, Earrings, Bangles."
+            "description": "Returns active jewellery categories ordered by name (e.g. Bangles, Bracelets, Chains, Chainsets, Earrings, Necklaces, Pendants)."
           }
         },
         {
@@ -87,7 +174,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "catalog", "finish-types"]
             },
-            "description": "Returns active finish types: Antique, Adstone, Gold, Rosegold."
+            "description": "Returns active finish types ordered by name (e.g. Adstone, Antique, Gold, Rosegold)."
           }
         },
         {
@@ -100,7 +187,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "catalog", "occasion-types"]
             },
-            "description": "Returns active occasion types: Festive, Casual."
+            "description": "Returns active occasion types ordered by name (e.g. Casual, Festive)."
           }
         }
       ]
@@ -109,42 +196,56 @@
       "name": "Products",
       "item": [
         {
-          "name": "List Products",
+          "name": "List All Products (Default: Newest First)",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
               "raw": "{{base_url}}/api/products",
               "host": ["{{base_url}}"],
-              "path": ["api", "products"],
-              "query": [
-                { "key": "category",     "value": "Necklaces",  "disabled": true, "description": "Filter by category name" },
-                { "key": "finish_type",  "value": "Gold",       "disabled": true, "description": "Filter by finish type name" },
-                { "key": "occasion_type","value": "Festive",    "disabled": true, "description": "Filter by occasion type name" },
-                { "key": "is_available", "value": "true",       "disabled": true, "description": "true | false" },
-                { "key": "sort_by",      "value": "price_asc",  "disabled": true, "description": "price_asc | price_desc | newest" }
-              ]
+              "path": ["api", "products"]
             },
-            "description": "List all products. All query params are optional and combinable.\n\nQuery params:\n- category: filter by category name (e.g. Necklaces)\n- finish_type: filter by finish type name (e.g. Gold)\n- occasion_type: filter by occasion type name (e.g. Festive)\n- is_available: true | false\n- sort_by: price_asc | price_desc | newest (default)"
+            "description": "Fetch all products with joined category, finish type, occasion type, and product images."
           }
         },
         {
-          "name": "List Products — Filtered Example",
+          "name": "List Products — Filtered & Sorted",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/products?category=Necklaces&finish_type=Gold&sort_by=price_asc&is_available=true",
+              "raw": "{{base_url}}/api/products?category=Necklaces&finish_type=Gold&occasion_type=Festive&is_available=true&sort_by=price_asc",
               "host": ["{{base_url}}"],
               "path": ["api", "products"],
               "query": [
-                { "key": "category",     "value": "Necklaces" },
-                { "key": "finish_type",  "value": "Gold" },
-                { "key": "sort_by",      "value": "price_asc" },
-                { "key": "is_available", "value": "true" }
+                {
+                  "key": "category",
+                  "value": "Necklaces",
+                  "description": "Filter by category name (e.g. Necklaces, Bangles, Earrings)"
+                },
+                {
+                  "key": "finish_type",
+                  "value": "Gold",
+                  "description": "Filter by finish type name (e.g. Gold, Antique, Rosegold, Adstone)"
+                },
+                {
+                  "key": "occasion_type",
+                  "value": "Festive",
+                  "description": "Filter by occasion type name (e.g. Festive, Casual)"
+                },
+                {
+                  "key": "is_available",
+                  "value": "true",
+                  "description": "Filter by active status: true | false"
+                },
+                {
+                  "key": "sort_by",
+                  "value": "price_asc",
+                  "description": "Sorting option: price_asc | price_desc | newest (default)"
+                }
               ]
             },
-            "description": "Example: active Gold Necklaces sorted cheapest first."
+            "description": "List products with multiple query filters and sorting applied simultaneously."
           }
         },
         {
@@ -157,107 +258,115 @@
               "host": ["{{base_url}}"],
               "path": ["api", "products", "{{product_id}}"]
             },
-            "description": "Get a single product by UUID. Returns 404 if not found.\n\nSet the product_id variable in the collection Variables tab."
+            "description": "Fetch a single product by UUID with joined relations (category, finish_type, occasion_type, product_images).\n\nReturns 404 (PRODUCT_NOT_FOUND) if the UUID does not exist."
           }
         },
         {
-          "name": "Create Product — Minimal",
+          "name": "Create Product (Minimal)",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"name\": \"Gold Layered Necklace\",\n  \"price\": 1499\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{base_url}}/api/products",
               "host": ["{{base_url}}"],
               "path": ["api", "products"]
             },
-            "description": "Create a product with only required fields: name and price."
+            "description": "Create a new product with required fields only (`name` and `price`). Default stock is 0 and is_active is true."
           }
         },
         {
-          "name": "Create Product — Full",
+          "name": "Create Product (Full with Lookups)",
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Antique Bangle Set\",\n  \"description\": \"Traditional antique finish bangle set with intricate design\",\n  \"short_description\": \"Antique finish bangle set\",\n  \"price\": 899,\n  \"offer_price\": 749,\n  \"offer_label\": \"17% off\",\n  \"stock_quantity\": 5,\n  \"delivery_time\": \"3-5 days\",\n  \"category_id\": \"REPLACE-WITH-CATEGORY-UUID\",\n  \"finish_type_id\": \"REPLACE-WITH-FINISH-TYPE-UUID\",\n  \"occasion_type_id\": \"REPLACE-WITH-OCCASION-TYPE-UUID\"\n}",
-              "options": { "raw": { "language": "json" } }
+              "raw": "{\n  \"name\": \"Antique Bridal Bangle Set\",\n  \"description\": \"Traditional temple antique finish bangle set crafted with intricate ruby stones.\",\n  \"short_description\": \"Traditional antique finish bangles\",\n  \"price\": 1899,\n  \"offer_price\": 1599,\n  \"offer_label\": \"15% OFF\",\n  \"stock_quantity\": 12,\n  \"delivery_time\": \"3-5 business days\",\n  \"category_id\": \"{{category_id}}\",\n  \"finish_type_id\": \"{{finish_type_id}}\",\n  \"occasion_type_id\": \"{{occasion_type_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{base_url}}/api/products",
               "host": ["{{base_url}}"],
               "path": ["api", "products"]
             },
-            "description": "Create a product with all fields. Get category_id, finish_type_id, occasion_type_id from GET /api/catalog."
+            "description": "Create a new product with full fields including lookup UUIDs (category_id, finish_type_id, occasion_type_id from GET /api/catalog)."
           }
         },
         {
-          "name": "Update Product — Price & Stock",
+          "name": "Update Product (Price, Stock & Offer)",
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"price\": 1299,\n  \"stock_quantity\": 8\n}",
-              "options": { "raw": { "language": "json" } }
+              "raw": "{\n  \"price\": 1799,\n  \"offer_price\": 1499,\n  \"offer_label\": \"Special Festive Deal\",\n  \"stock_quantity\": 20\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{base_url}}/api/products/{{product_id}}",
               "host": ["{{base_url}}"],
               "path": ["api", "products", "{{product_id}}"]
             },
-            "description": "Update price and stock quantity. All fields are optional — only provided fields are updated."
+            "description": "Update specific fields on an existing product. Only provided fields are modified. Returns 404 if product does not exist."
           }
         },
         {
-          "name": "Update Product — Deactivate",
+          "name": "Update Product (Deactivate / Hide from Storefront)",
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"is_active\": false\n}",
-              "options": { "raw": { "language": "json" } }
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{base_url}}/api/products/{{product_id}}",
               "host": ["{{base_url}}"],
               "path": ["api", "products", "{{product_id}}"]
             },
-            "description": "Deactivate a product (hide from storefront). Use is_active: true to reactivate."
-          }
-        },
-        {
-          "name": "Update Product — Add Offer",
-          "request": {
-            "method": "PUT",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"offer_price\": 999,\n  \"offer_label\": \"Sale\"\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{base_url}}/api/products/{{product_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "products", "{{product_id}}"]
-            },
-            "description": "Add or update a sale price and label on an existing product."
+            "description": "Soft-deactivate a product so it can be filtered out from customer queries (`is_available=true`)."
           }
         },
         {
@@ -270,7 +379,7 @@
               "host": ["{{base_url}}"],
               "path": ["api", "products", "{{product_id}}"]
             },
-            "description": "Permanently delete a product. Returns 404 if UUID does not exist."
+            "description": "Permanently delete a product by UUID. Associated images cascade delete. Returns `{ \"success\": true, \"data\": null }`."
           }
         }
       ]
