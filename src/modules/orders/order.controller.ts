@@ -49,9 +49,11 @@ export async function createOrderController(req: Request, res: Response) {
   res.status(201).json({ success: true, data: order });
 }
 
-export async function listOrdersController(_req: Request, res: Response) {
-  const orders = await getAllOrders();
-  res.json({ success: true, data: orders });
+export async function listOrdersController(req: Request, res: Response) {
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const result = await getAllOrders({ page, limit });
+  res.json({ success: true, data: result });
 }
 
 export async function getOrderController(req: Request, res: Response) {

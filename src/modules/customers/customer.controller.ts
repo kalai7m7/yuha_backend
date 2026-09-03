@@ -1,9 +1,11 @@
 import { Request, Response } from 'express';
 import { getAllCustomers, getCustomer } from './customer.service';
 
-export async function listCustomersController(_req: Request, res: Response) {
-  const customers = await getAllCustomers();
-  res.json({ success: true, data: customers });
+export async function listCustomersController(req: Request, res: Response) {
+  const page = parseInt(req.query.page as string) || 1;
+  const limit = parseInt(req.query.limit as string) || 10;
+  const result = await getAllCustomers({ page, limit });
+  res.json({ success: true, data: result });
 }
 
 export async function getCustomerController(req: Request, res: Response) {

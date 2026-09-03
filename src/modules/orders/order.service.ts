@@ -4,14 +4,15 @@ import {
   getOrderById,
   updateOrderStatus,
   CreateOrderInput,
+  PaginationOptions,
 } from './order.repository';
 
 export async function placeOrder(input: CreateOrderInput) {
   return createOrder(input);
 }
 
-export async function getAllOrders() {
-  return listOrders();
+export async function getAllOrders(opts: PaginationOptions = {}) {
+  return listOrders(opts);
 }
 
 export async function getOrder(id: string) {

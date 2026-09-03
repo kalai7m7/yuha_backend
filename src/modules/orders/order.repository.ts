@@ -50,12 +50,16 @@ const ORDER_SELECT = `
 `;
 
 export async function createOrder(input: CreateOrderInput) {
-  // 1. Find or create customer
+  // 1. Find or create customer (pass shipping address so the customer row is populated)
   const customer = await findOrCreateCustomer({
     name: input.customer.name,
     email: input.customer.email,
     phone_number: input.customer.phone_number,
     alternate_phone: input.customer.alt_phone,
+    address_line: input.shipping.shipping_address,
+    city: input.shipping.shipping_city,
+    state: input.shipping.shipping_state,
+    pincode: input.shipping.shipping_pincode,
   });
 
   // 2. Insert order header
@@ -173,18 +177,44 @@ export async function createOrder(input: CreateOrderInput) {
   return { ...hydratedOrder, emailSent };
 }
 
-export async function listOrders() {
-  const { data, error } = await supabaseAdmin
+export interface PaginationOptions {
+  page?: number;
+  limit?: number;
+}
+
+export interface PaginatedResult<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export async function listOrders(opts: PaginationOptions = {}): Promise<PaginatedResult<any>> {
+  const page = Math.max(1, opts.page ?? 1);
+  const limit = Math.min(100, Math.max(1, opts.limit ?? 10));
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  const { data, error, count } = await supabaseAdmin
     .from('orders')
-    .select(ORDER_SELECT)
-    .order('order_date', { ascending: false });
+    .select(ORDER_SELECT, { count: 'exact' })
+    .order('order_date', { ascending: false })
+    .range(from, to);
 
   if (error) {
     logger.error({ error }, 'Failed to list orders');
     throw new AppError(500, `Failed to fetch orders: ${error.message}`, 'ORDER_QUERY_FAILED');
   }
 
-  return data ?? [];
+  const total = count ?? 0;
+  return {
+    data: data ?? [],
+    total,
+    page,
+    limit,
+    totalPages: Math.max(1, Math.ceil(total / limit)),
+  };
 }
 
 export async function getOrderById(id: string) {

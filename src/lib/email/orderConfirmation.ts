@@ -41,8 +41,7 @@ function buildHtml(d: OrderEmailData): string {
     )
     .join('');
 
-  const paymentLabel =
-    d.paymentMethod === 'cod' ? 'Cash on Delivery' : d.paymentMethod.toUpperCase();
+  const paymentLabel = d.paymentMethod.toUpperCase();
 
   return `<!DOCTYPE html>
 <html>
