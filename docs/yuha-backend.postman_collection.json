@@ -1,0 +1,597 @@
+{
+  "info": {
+    "name": "Yuha Backend API",
+    "description": "REST API collection for Yuha Exclusives jewellery store backend.\n\nBase URL: {{base_url}} (default: http://localhost:3000)\n\nResponse Conventions:\n- Success (2xx): { \"success\": true, \"data\": ... }\n- Error (4xx/5xx): { \"success\": false, \"error\": { \"code\": \"...\", \"message\": \"...\", \"details\": ... }, \"requestId\": \"...\" }\n\nAuth Header (when required): Authorization: Bearer {{access_token}}",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "REPLACE-WITH-ACCESS-TOKEN",
+      "type": "string"
+    },
+    {
+      "key": "product_id",
+      "value": "REPLACE-WITH-PRODUCT-UUID",
+      "type": "string"
+    },
+    {
+      "key": "category_id",
+      "value": "REPLACE-WITH-CATEGORY-UUID",
+      "type": "string"
+    },
+    {
+      "key": "finish_type_id",
+      "value": "REPLACE-WITH-FINISH-TYPE-UUID",
+      "type": "string"
+    },
+    {
+      "key": "occasion_type_id",
+      "value": "REPLACE-WITH-OCCASION-TYPE-UUID",
+      "type": "string"
+    },
+    {
+      "key": "order_id",
+      "value": "REPLACE-WITH-ORDER-UUID",
+      "type": "string"
+    },
+    {
+      "key": "customer_id",
+      "value": "REPLACE-WITH-CUSTOMER-UUID",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health & System",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/health",
+              "host": ["{{base_url}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Server liveness check.\n\nReturns HTTP 200 with service status: { \"success\": true, \"data\": { \"status\": \"ok\", \"service\": \"yuha-backend\" } }."
+          }
+        },
+        {
+          "name": "Debug — Supabase DB Probe",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/debug/supabase",
+              "host": ["{{base_url}}"],
+              "path": ["api", "debug", "supabase"]
+            },
+            "description": "⚠️ Temporary diagnostic endpoint — verifies connectivity to Supabase PostgreSQL database using supabaseAdmin client. Remove before production deployment."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (Supabase Auth)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.session && jsonData.data.session.access_token) {",
+                  "        pm.collectionVariables.set('access_token', jsonData.data.session.access_token);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@yuhaexclusives.com\",\n  \"password\": \"your-admin-password\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Authenticates user against Supabase Auth (signInWithPassword).\n\nReturns `{ user, session }` including `access_token` and `refresh_token`.\n\nNote: In the current backend, the auth module is implemented in `src/modules/auth/` and ready to be mounted in `src/routes.ts` (`apiRouter.use('/auth', authRouter)`)."
+          }
+        },
+        {
+          "name": "Get Current User Profile (Me)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Protected endpoint. Validates Bearer token via `supabase.auth.getUser(token)` and fetches the extended profile (`id, email, full_name, role, is_active`) from the `profiles` table using `supabaseAdmin`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catalog (Lookups)",
+      "item": [
+        {
+          "name": "Get All Catalog (Categories + Finish Types + Occasion Types)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/catalog",
+              "host": ["{{base_url}}"],
+              "path": ["api", "catalog"]
+            },
+            "description": "Fetches all active lookup tables in a single call in parallel via Promise.all.\n\nUsed by frontend to populate filter dropdowns and admin selectors.\n\nReturns `{ categories: [...], finish_types: [...], occasion_types: [...] }`."
+          }
+        },
+        {
+          "name": "Get Categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/catalog/categories",
+              "host": ["{{base_url}}"],
+              "path": ["api", "catalog", "categories"]
+            },
+            "description": "Returns active jewellery categories ordered by name (e.g. Bangles, Bracelets, Chains, Chainsets, Earrings, Necklaces, Pendants)."
+          }
+        },
+        {
+          "name": "Get Finish Types",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/catalog/finish-types",
+              "host": ["{{base_url}}"],
+              "path": ["api", "catalog", "finish-types"]
+            },
+            "description": "Returns active finish types ordered by name (e.g. Adstone, Antique, Gold, Rosegold)."
+          }
+        },
+        {
+          "name": "Get Occasion Types",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/catalog/occasion-types",
+              "host": ["{{base_url}}"],
+              "path": ["api", "catalog", "occasion-types"]
+            },
+            "description": "Returns active occasion types ordered by name (e.g. Casual, Festive)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "item": [
+        {
+          "name": "List All Products (Default: Newest First)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/products",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products"]
+            },
+            "description": "Fetch all products with joined category, finish type, occasion type, and product images."
+          }
+        },
+        {
+          "name": "List Products — Filtered & Sorted",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/products?category=Necklaces&finish_type=Gold&occasion_type=Festive&is_available=true&sort_by=price_asc",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products"],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "Necklaces",
+                  "description": "Filter by category name (e.g. Necklaces, Bangles, Earrings)"
+                },
+                {
+                  "key": "finish_type",
+                  "value": "Gold",
+                  "description": "Filter by finish type name (e.g. Gold, Antique, Rosegold, Adstone)"
+                },
+                {
+                  "key": "occasion_type",
+                  "value": "Festive",
+                  "description": "Filter by occasion type name (e.g. Festive, Casual)"
+                },
+                {
+                  "key": "is_available",
+                  "value": "true",
+                  "description": "Filter by active status: true | false"
+                },
+                {
+                  "key": "sort_by",
+                  "value": "price_asc",
+                  "description": "Sorting option: price_asc | price_desc | newest (default)"
+                }
+              ]
+            },
+            "description": "List products with multiple query filters and sorting applied simultaneously."
+          }
+        },
+        {
+          "name": "Get Product by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/products/{{product_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products", "{{product_id}}"]
+            },
+            "description": "Fetch a single product by UUID with joined relations (category, finish_type, occasion_type, product_images).\n\nReturns 404 (PRODUCT_NOT_FOUND) if the UUID does not exist."
+          }
+        },
+        {
+          "name": "Create Product (Minimal)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Gold Layered Necklace\",\n  \"price\": 1499\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/products",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products"]
+            },
+            "description": "Create a new product with required fields only (`name` and `price`). Default stock is 0 and is_active is true."
+          }
+        },
+        {
+          "name": "Create Product (Full with Lookups)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Antique Bridal Bangle Set\",\n  \"description\": \"Traditional temple antique finish bangle set crafted with intricate ruby stones.\",\n  \"short_description\": \"Traditional antique finish bangles\",\n  \"price\": 1899,\n  \"offer_price\": 1599,\n  \"offer_label\": \"15% OFF\",\n  \"stock_quantity\": 12,\n  \"delivery_time\": \"3-5 business days\",\n  \"category_id\": \"{{category_id}}\",\n  \"finish_type_id\": \"{{finish_type_id}}\",\n  \"occasion_type_id\": \"{{occasion_type_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/products",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products"]
+            },
+            "description": "Create a new product with full fields including lookup UUIDs (category_id, finish_type_id, occasion_type_id from GET /api/catalog)."
+          }
+        },
+        {
+          "name": "Update Product (Price, Stock & Offer)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 1799,\n  \"offer_price\": 1499,\n  \"offer_label\": \"Special Festive Deal\",\n  \"stock_quantity\": 20\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/products/{{product_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products", "{{product_id}}"]
+            },
+            "description": "Update specific fields on an existing product. Only provided fields are modified. Returns 404 if product does not exist."
+          }
+        },
+        {
+          "name": "Update Product (Deactivate / Hide from Storefront)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/products/{{product_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products", "{{product_id}}"]
+            },
+            "description": "Soft-deactivate a product so it can be filtered out from customer queries (`is_available=true`)."
+          }
+        },
+        {
+          "name": "Upload Product Images",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "images",
+                  "type": "file",
+                  "description": "Select 1 to 10 image files (JPEG, PNG, WEBP, etc.)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/products/{{product_id}}/images",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products", "{{product_id}}", "images"]
+            },
+            "description": "Upload one or more images directly to an existing product. Uploads binaries to the `products` Supabase Storage bucket and creates records in `product_images` table."
+          }
+        },
+        {
+          "name": "Delete Product",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/products/{{product_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "products", "{{product_id}}"]
+            },
+            "description": "Permanently delete a product by UUID. Associated images cascade delete. Returns `{ \"success\": true, \"data\": null }`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Delivery Pincodes",
+      "item": [
+        {
+          "name": "Check Pincode Deliverability",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pincodes/600001",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pincodes", "600001"]
+            },
+            "description": "Check if a 6-digit postal pincode is active for delivery. Returns `{ deliverable: true/false, city, state }`."
+          }
+        },
+        {
+          "name": "List All Pincodes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pincodes",
+              "host": ["{{base_url}}"],
+              "path": ["api", "pincodes"]
+            },
+            "description": "List all deliverable postal pincodes in the database."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders",
+      "item": [
+        {
+          "name": "Create Order (Checkout)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer\": {\n    \"name\": \"Priya Sharma\",\n    \"email\": \"priya@example.com\",\n    \"phone_number\": \"9876543210\"\n  },\n  \"shipping\": {\n    \"shipping_name\": \"Priya Sharma\",\n    \"shipping_phone\": \"9876543210\",\n    \"shipping_address\": \"Flat 402, Lotus Apartments, Anna Nagar\",\n    \"shipping_city\": \"Chennai\",\n    \"shipping_state\": \"Tamil Nadu\",\n    \"shipping_pincode\": \"600001\"\n  },\n  \"items\": [\n    {\n      \"product_id\": \"{{product_id}}\",\n      \"product_name\": \"Antique Bridal Bangle Set\",\n      \"quantity\": 1,\n      \"unit_price\": 1599,\n      \"total_price\": 1599\n    }\n  ],\n  \"total_amount\": 1599,\n  \"shipping_cost\": 0,\n  \"grand_total\": 1599,\n  \"payment_method\": \"cod\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/orders",
+              "host": ["{{base_url}}"],
+              "path": ["api", "orders"]
+            },
+            "description": "Place a new customer order. Automatically creates/finds customer record, inserts order items, registers payment ledger, and deducts inventory."
+          }
+        },
+        {
+          "name": "List All Orders (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/orders",
+              "host": ["{{base_url}}"],
+              "path": ["api", "orders"]
+            },
+            "description": "Protected admin endpoint to list all customer orders ordered newest first."
+          }
+        },
+        {
+          "name": "Get Order by ID (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{order_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "orders", "{{order_id}}"]
+            },
+            "description": "Fetch a specific order with customer, line items, and payment details."
+          }
+        },
+        {
+          "name": "Update Order Status (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"shipped\",\n  \"tracking_number\": \"DELHIVERY-987654321\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/orders/{{order_id}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "orders", "{{order_id}}", "status"]
+            },
+            "description": "Update the fulfillment status of an order ('confirmed', 'processing', 'shipped', 'delivered', 'cancelled')."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customers",
+      "item": [
+        {
+          "name": "List All Customers (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/customers",
+              "host": ["{{base_url}}"],
+              "path": ["api", "customers"]
+            },
+            "description": "Protected admin endpoint to list all customers and their order summaries."
+          }
+        },
+        {
+          "name": "Get Customer by ID (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/customers/{{customer_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "customers", "{{customer_id}}"]
+            },
+            "description": "Fetch customer profile by UUID with addresses and complete order history."
+          }
+        }
+      ]
+    }
+  ]
+}

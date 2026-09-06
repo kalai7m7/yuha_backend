@@ -1,49 +1,53 @@
-import dotenv from "dotenv";
-dotenv.config();
-
 import express from 'express';
-import path from 'path';
 import cors from 'cors';
-import itemRoutes from './routes/itemRoutes';
-import categoryRoutes from './routes/categoryRoutes';
-import { errorHandler } from './middlewares/errorHandler';
-import { requestLogger } from './middlewares/requestLogger';
-import { traceMiddleware } from './middlewares/traceMiddleware';
-import catalogRouter from './routes/catalogRoutes';
-import cookieParser from 'cookie-parser';
-import authRouter from './routes/auth.routes';
+import helmet from 'helmet';
+import { env } from './config/env';
+import { requestLogger } from './lib/requestLogger';
+import { apiRouter } from './routes';
+import { errorHandler, notFound } from './middleware/error.middleware';
+import { supabaseAdmin } from './lib/supabase/admin';
 
-const app = express();
+export const app = express();
 
-const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173')
-  .split(',')
-  .map(o => o.trim());
+app.disable('x-powered-by');
+
+app.use(helmet());
 
 app.use(
   cors({
-    origin: allowedOrigins,
-    credentials: true,
+    origin: env.CORS_ORIGINS.split(',').map((value) => value.trim()),
+    credentials: true
   })
 );
 
-app.use(traceMiddleware);
-app.use(express.json());
-app.use(cookieParser());
+app.use(express.json({ limit: '1mb' }));
 app.use(requestLogger);
-app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
 
-// Routes
-app.use('/api/items', itemRoutes);
-app.use('/api/category', categoryRoutes);
-app.use('/api/catalog', catalogRouter);
-app.use('/api/auth', authRouter)
+app.get('/api/health', (_req, res) => {
+  res.json({
+    success: true,
+    data: {
+      status: 'ok',
+      service: 'yuha-backend'
+    }
+  });
+});
 
-// Global error handler (should be after routes)
+// Temporary connection probe — remove once DB is confirmed working
+app.get('/api/debug/supabase', async (_req, res) => {
+  const { data, error } = await supabaseAdmin
+    .from('products')
+    .select('id')
+    .limit(1);
+
+  if (error) {
+    res.status(500).json({ success: false, error: { message: error.message, code: error.code, details: error.details, hint: error.hint } });
+    return;
+  }
+  res.json({ success: true, data });
+});
+
+app.use('/api', apiRouter);
+
+app.use(notFound);
 app.use(errorHandler);
-
-// app.listen(process.env.PORT, () =>
-//   console.log(`Server running on ${process.env.PORT}`)
-// );
-
-console.log("Process Env var check: ", process.env.DB_HOST)
-export default app;
