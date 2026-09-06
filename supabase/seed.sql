@@ -30,25 +30,25 @@ INSERT INTO public.occasion_types (name) VALUES
 ON CONFLICT (name) DO NOTHING;
 
 -- ── Delivery pincodes ─────────────────────────────────────────
-INSERT INTO public.delivery_pincodes (pincode, city, state) VALUES
-  ('110001', 'New Delhi',  'Delhi'),
-  ('110002', 'New Delhi',  'Delhi'),
-  ('110003', 'New Delhi',  'Delhi'),
-  ('400001', 'Mumbai',     'Maharashtra'),
-  ('400002', 'Mumbai',     'Maharashtra'),
-  ('400003', 'Mumbai',     'Maharashtra'),
-  ('560001', 'Bengaluru',  'Karnataka'),
-  ('560002', 'Bengaluru',  'Karnataka'),
-  ('560003', 'Bengaluru',  'Karnataka'),
-  ('600001', 'Chennai',    'Tamil Nadu'),
-  ('600002', 'Chennai',    'Tamil Nadu'),
-  ('600003', 'Chennai',    'Tamil Nadu'),
-  ('700001', 'Kolkata',    'West Bengal'),
-  ('700002', 'Kolkata',    'West Bengal'),
-  ('700003', 'Kolkata',    'West Bengal'),
-  ('500001', 'Hyderabad',  'Telangana'),
-  ('500002', 'Hyderabad',  'Telangana'),
-  ('500003', 'Hyderabad',  'Telangana')
+INSERT INTO public.delivery_pincodes (pincode, city, state, source) VALUES
+  ('110001', 'New Delhi',  'Delhi',        'admin'),
+  ('110002', 'New Delhi',  'Delhi',        'admin'),
+  ('110003', 'New Delhi',  'Delhi',        'admin'),
+  ('400001', 'Mumbai',     'Maharashtra',  'admin'),
+  ('400002', 'Mumbai',     'Maharashtra',  'admin'),
+  ('400003', 'Mumbai',     'Maharashtra',  'admin'),
+  ('560001', 'Bengaluru',  'Karnataka',    'admin'),
+  ('560002', 'Bengaluru',  'Karnataka',    'admin'),
+  ('560003', 'Bengaluru',  'Karnataka',    'admin'),
+  ('600001', 'Chennai',    'Tamil Nadu',   'admin'),
+  ('600002', 'Chennai',    'Tamil Nadu',   'admin'),
+  ('600003', 'Chennai',    'Tamil Nadu',   'admin'),
+  ('700001', 'Kolkata',    'West Bengal',  'admin'),
+  ('700002', 'Kolkata',    'West Bengal',  'admin'),
+  ('700003', 'Kolkata',    'West Bengal',  'admin'),
+  ('500001', 'Hyderabad',  'Telangana',    'admin'),
+  ('500002', 'Hyderabad',  'Telangana',    'admin'),
+  ('500003', 'Hyderabad',  'Telangana',    'admin')
 ON CONFLICT (pincode) DO NOTHING;
 
 -- ── Sample chains (20 products for infinite-scroll validation) ─

@@ -142,6 +142,8 @@ CREATE TABLE public.delivery_pincodes (
   city       TEXT,
   state      TEXT,
   is_active  BOOLEAN NOT NULL DEFAULT TRUE,
+  source     TEXT NOT NULL DEFAULT 'admin' CHECK (source IN ('admin', 'cache')),
+  cached_at  TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

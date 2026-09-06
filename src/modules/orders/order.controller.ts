@@ -7,6 +7,16 @@ import {
 } from './order.service';
 import { AppError } from '../../shared/errors/AppError';
 
+const VALID_PAYMENT_METHODS = ['cod', 'upi', 'razorpay', 'card'] as const;
+type PaymentMethod = typeof VALID_PAYMENT_METHODS[number];
+
+function sanitisePaymentMethod(raw: unknown): PaymentMethod {
+  if (typeof raw === 'string' && VALID_PAYMENT_METHODS.includes(raw as PaymentMethod)) {
+    return raw as PaymentMethod;
+  }
+  return 'upi'; // safe fallback for online payments
+}
+
 export async function createOrderController(req: Request, res: Response) {
   const body = req.body;
   if (!body.customer || !body.shipping || !body.items || !Array.isArray(body.items) || body.items.length === 0) {
@@ -41,7 +51,7 @@ export async function createOrderController(req: Request, res: Response) {
     shipping_cost: Number(body.shipping_cost || 0),
     discount_amount: Number(body.discount_amount || 0),
     grand_total: Number(body.grand_total || body.totalPrice || 0),
-    payment_method: body.payment_method || 'cod',
+    payment_method: sanitisePaymentMethod(body.payment_method),
     coupon_code: body.coupon_code,
     notes: body.notes,
   });
