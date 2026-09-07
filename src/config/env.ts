@@ -10,4 +10,11 @@ const schema = z.object({
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info')
 });
 
+console.log({
+  NODE_ENV: process.env.NODE_ENV,
+  SUPABASE_URL: process.env.SUPABASE_URL,
+  HAS_PUBLISHABLE_KEY: !!process.env.SUPABASE_PUBLISHABLE_KEY,
+  HAS_SECRET_KEY: !!process.env.SUPABASE_SECRET_KEY,
+});
+
 export const env = schema.parse(process.env);
